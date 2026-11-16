@@ -1,0 +1,90 @@
+name: checks
+
+# The plugin is source built with Kannabi, so it is checked the only way it
+# runs: inside a Kannabi checkout, at plugins/depot, listed after the GS1
+# plugin it requires. Kannabi's own CI never names a plugin, so a change in
+# core that breaks this one is found here, by the scheduled run.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+    inputs:
+      core-ref:
+        description: The Kannabi branch, tag or commit to check against
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CORE_REF: ${{ inputs.core-ref || 'main' }}
+  # The GS1 plugin this one is checked with: the release the README names.
+  PLUGIN_LIST: >-
+    {"plugins":[{"id":"gs1","repository":"https://github.com/iomz/kannabi-plugin-gs1.git","ref":"v0.1.2"},{"id":"depot"}]}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: iomz/kannabi
+          ref: ${{ env.CORE_REF }}
+      - uses: actions/checkout@v5
+        with:
+          path: plugins/depot
+      - name: List the GS1 plugin and this one
+        run: echo "$PLUGIN_LIST" > kannabi.plugins.json
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm plugins:sync
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm test
+
+  # Only this plugin's integration suites: core's and the GS1 plugin's run in
+  # their own repositories.
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: iomz/kannabi
+          ref: ${{ env.CORE_REF }}
+      - uses: actions/checkout@v5
+        with:
+          path: plugins/depot
+      - name: List the GS1 plugin and this one
+        run: echo "$PLUGIN_LIST" > kannabi.plugins.json
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm plugins:sync
+      - name: Pull the test image
+        run: |
+          for attempt in 1 2 3 4 5; do
+            docker pull --quiet neo4j:5-community && break
+            [ "$attempt" = 5 ] && exit 1
+            sleep $((attempt * 15))
+          done
+      - name: Run this plugin's integration suites
+        run: |
+          find plugins/depot -name '*.integration.test.ts' -not -path '*/node_modules/*' -print0 \
+            | sort -z | xargs -0 node scripts/test-identity.mjs
