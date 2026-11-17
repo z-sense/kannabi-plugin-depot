@@ -51,7 +51,7 @@ List it after the GS1 plugin in `kannabi.plugins.json`:
 ```json
 {
   "plugins": [
-    { "id": "gs1", "repository": "https://github.com/iomz/kannabi-plugin-gs1.git", "ref": "v0.1.2" },
+    { "id": "gs1", "repository": "https://github.com/iomz/kannabi-plugin-gs1.git", "ref": "v0.1.3" },
     { "id": "depot", "repository": "https://github.com/z-sense/kannabi-plugin-depot.git", "ref": "v0.1.0" }
   ]
 }
